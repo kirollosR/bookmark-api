@@ -1,35 +1,32 @@
-import { ConflictException, ForbiddenException, HttpCode, HttpStatus, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthDto } from './dto/auth.dto';
 import * as argon from 'argon2';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { User } from '@prisma/client';
-import { console } from 'inspector';
-import { ErrorResponseDto, SuccessResponseDto } from 'src/common/dto';
 
 @Injectable()
 export class AuthService {
   constructor(private readonly prisma: PrismaService) { }
 
-  async checkUserExists(email: string): Promise<User | null> {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: email },
+  async getUserByEmail(email: string): Promise<User | null> {
+    return this.prisma.user.findUnique({
+      where: { email },
     });
+  }
+
+  async checkUserExists(email: string): Promise<void> {
+    const existingUser = await this.getUserByEmail(email);
 
     if (existingUser) {
-      throw new ConflictException(
-        new ErrorResponseDto(
-          'USER_EXISTS',
-          'Email already registered',
-          `The email ${email} is already associated with an account`,
-        ),
-      );
-    } else {
-      return null;
+      throw new ConflictException({
+        code: 'USER_EXISTS',
+        message: 'Email already registered',
+        details: `The email ${email} is already associated with an account`,
+      });
     }
   }
 
-  async register(authDto: AuthDto): Promise<SuccessResponseDto<any> | ErrorResponseDto> {
+  async register(authDto: AuthDto): Promise<Omit<User, 'password'>> {
     try {
       // Check if user already exists
       await this.checkUserExists(authDto.email);
@@ -45,34 +42,51 @@ export class AuthService {
         },
       });
 
-      // Remove password from user object
+      // Remove password from user object and return
       const { password, ...userData } = user;
-
-      // Return formatted success response with authToken
-      return new SuccessResponseDto('User registered successfully', {
-        ...userData,
-      });
-    } catch (error: unknown) {
-      // Check if it's already a handled error (like our ConflictException)
+      return userData;
+    } catch (error) {
+      // Let specific errors pass through (like ConflictException)
       if (error instanceof ConflictException) {
         throw error;
       }
 
-      // For standard errors, extract the message safely
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-
-      throw new UnprocessableEntityException(
-        new ErrorResponseDto(
-          'REGISTRATION_FAILED',
-          'User registration failed',
-          errorMessage,
-        ),
-      );
+      // For other errors, wrap in a more descriptive exception
+      throw new UnprocessableEntityException({
+        code: 'REGISTRATION_FAILED',
+        message: 'User registration failed',
+        details: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   }
 
-  login(): { message: string } {
-    return { message: 'User logged in successfully!' };
-  }
+  async login(authDto: AuthDto): Promise<Omit<User, 'password'>> {
+    // find user by email
+    const user = await this.getUserByEmail(authDto.email);
+    
+    // if user not found, throw error
+    if (!user) {
+      throw new ForbiddenException({
+        code: 'USER_NOT_FOUND',
+        message: 'User not found',
+        details: `No user found with email ${authDto.email}`,
+      });
+    }
 
+    //compare password
+    const passwordMatches = await argon.verify(user.password, authDto.password);
+    
+    // if password is incorrect, throw error
+    if (!passwordMatches) {
+      throw new ForbiddenException({
+        code: 'INVALID_PASSWORD',
+        message: 'Invalid password',
+        details: 'The password provided is incorrect',
+      });
+    }
+
+    // Return user data without password
+    const { password, ...userData } = user;
+    return userData;
+  }
 }
