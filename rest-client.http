@@ -3,7 +3,7 @@ POST http://localhost:3000/auth/register
 Content-Type: application/json
 
 {
-  "email": "testuser@test.com",
+  "email": "testuser2@test.com",
   "password": "testpassword"
 }
 
@@ -13,6 +13,10 @@ POST http://localhost:3000/auth/login
 Content-Type: application/json
 
 {
-  "email": "testusesr@test.com",
+  "email": "testuser@test.com",
   "password": "testpassword"
 }
+
+### Get User me
+GET http://localhost:3000/users/me
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImVtYWlsIjoidGVzdHVzZXJAdGVzdC5jb20iLCJpYXQiOjE3NDQ0OTk0NDQsImV4cCI6MTc0NDUwMzA0NH0.HgZsU1h9aOM0mLRgYNu9NQd5-ArmxPj165v7NbWjn2Q

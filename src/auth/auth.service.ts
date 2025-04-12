@@ -3,10 +3,28 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthDto } from './dto/auth.dto';
 import * as argon from 'argon2';
 import { User } from '@prisma/client';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService
+  ) { }
+
+  async signToken(userId: number, email: string): Promise<{ access_token: string }> {
+    const payload = {
+      sub: userId,
+      email,
+    };
+
+    const access_token = await this.jwt.signAsync(payload, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '1h', // Default to 1 hour if not set
+      secret: process.env.JWT_SECRET,
+    });
+
+    return { access_token };
+  }
 
   async getUserByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({
@@ -60,10 +78,10 @@ export class AuthService {
     }
   }
 
-  async login(authDto: AuthDto): Promise<Omit<User, 'password'>> {
+  async login(authDto: AuthDto) {
     // find user by email
     const user = await this.getUserByEmail(authDto.email);
-    
+
     // if user not found, throw error
     if (!user) {
       throw new ForbiddenException({
@@ -75,7 +93,7 @@ export class AuthService {
 
     //compare password
     const passwordMatches = await argon.verify(user.password, authDto.password);
-    
+
     // if password is incorrect, throw error
     if (!passwordMatches) {
       throw new ForbiddenException({
@@ -85,8 +103,6 @@ export class AuthService {
       });
     }
 
-    // Return user data without password
-    const { password, ...userData } = user;
-    return userData;
+    return this.signToken(user.id, user.email);
   }
 }
